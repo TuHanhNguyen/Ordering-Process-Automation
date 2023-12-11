@@ -9,19 +9,16 @@ Library             OperatingSystem
 Library             RPA.Browser.Selenium
 Library             RPA.Tables
 Library             RPA.PDF
-
-Suite Setup         New Browser    chromium    headless=true
-# Suite Teardown    Clean Dev Session
+Library             RPA.Archive
 
 
 *** Variables ***
-${output_folder}                ${CURDIR}{/}output
-${screenshot_folder}            ${CURDIR}/screenshot
-${receipt_folder}               ${OUTPUT_DIR}${/}receipts/
+# ${output_folder}    ${CURDIR}{/}output
+${screenshot_folder}        ${OUTPUT_DIR}${/}sceenshots/
+${receipt_folder}           ${OUTPUT_DIR}${/}receipts/
 
-${GLOBAL_RETRY_AMOUNT}          10x
-${GLOBAL_RETRY_INTERVAL}        2s
-${default_selenium_timeout}     ${EMPTY}
+${GLOBAL_RETRY_AMOUNT}      10x
+${GLOBAL_RETRY_INTERVAL}    2s
 
 
 *** Tasks ***
@@ -33,23 +30,45 @@ Order robots from csv file
         Fill the form    ${row}
         Wait Until Keyword Succeeds    ${GLOBAL_RETRY_AMOUNT}    ${GLOBAL_RETRY_INTERVAL}    Click button "Preview"
         Wait Until Keyword Succeeds    ${GLOBAL_RETRY_AMOUNT}    ${GLOBAL_RETRY_INTERVAL}    Click button "ORDER"
-        Store the order receipt as a PDF file
-        # Take a screenshot of the robot image
-        # Embed the robot screenshot to the receipt PDF file
+        ${pdf}=    Store the order receipt as a PDF file
+        ${screenshot}=    Take a screenshot of the robot
+        Embed the robot screenshot to the receipt PDF file    ${screenshot}    ${pdf}
         Click button "ORDER ANOTHER ROBOT"
     END
-
-    # Collect the results
+    Create a ZIP file of receipt PDF files
 
 
 *** Keywords ***
+Create a ZIP file of receipt PDF files
+    Archive Folder With Zip    ${receipt_folder}    receipts.zip    recursive=True
+    Move File    receipts.zip    ${receipt_folder}
+
+Embed the robot screenshot to the receipt PDF file
+    [Arguments]    ${screenshot}    ${pdf}
+    Open Pdf    ${pdf}
+    @{file_to_add}=    Create List    ${screenshot}:align=center
+    Add Files To Pdf    ${file_to_add}    ${pdf}    append=True
+    Close Pdf
+
 Store the order receipt as a PDF file
-    Wait Until Element Is Visible    XPATH://html/body/div[1]/div/div[1]/div/div[1]/div/div
-    ${receipt_outer_html}=    Get Element Attribute
-    ...    XPATH://html/body/div[1]/div/div[1]/div/div[1]/div/div
-    ...    outerHTML
+    Set Local Variable    ${receipt_html_locator}    XPATH://html/body/div[1]/div/div[1]/div/div[1]/div/div
+    Wait Until Element Is Visible    ${receipt_html_locator}
+    ${receipt_html}=    Get Element Attribute    ${receipt_html_locator}    outerHTML
     ${receipt_id}=    RPA.Browser.Selenium.Get Text    XPATH://html/body/div[1]/div/div[1]/div/div[1]/div/div/p[1]
-    Html To Pdf    ${receipt_outer_html}    ${receipt_folder}{/}${receipt_id}.pdf
+    Html To Pdf
+    ...    ${receipt_html}
+    ...    ${receipt_folder}${receipt_id}.pdf
+    RETURN    ${receipt_folder}${receipt_id}.pdf
+
+Take a screenshot of the robot
+    Set Local Variable    ${robot_preview_image_locator}    XPATH://html/body/div[1]/div/div[1]/div/div[2]/div/div
+    Set Local Variable    ${robot_image_file_name}    ${order_no}
+    Wait Until Element Is Visible    ${robot_preview_image_locator}
+    Set Local Variable    ${image_path}    ${screenshot_folder}${robot_image_file_name}
+    ${robot_preview_image}=    Screenshot
+    ...    ${robot_preview_image_locator}
+    ...    ${image_path}.png
+    RETURN    ${image_path}.png
 
 # Download robot preview image
 #    Set Local Variable    ${robot_preview_image}    XPATH://html/body/div/div/div[1]/div/div[2]/div/div
@@ -76,7 +95,7 @@ Click button "ORDER ANOTHER ROBOT"
     ...    Click Element    ${order_another_robot_button_locator}
 
 Open ordering website
-    RPA.Browser.Selenium.Open Browser    https://robotsparebinindustries.com/#/robot-order
+    Open Headless Chrome Browser    https://robotsparebinindustries.com/#/robot-order
 
 Close annoying popup
     Set Local Variable    ${annoying_popup_locator}    XPATH://html/body/div/div/div[2]/div/div/div/div/div/button[1]
@@ -92,7 +111,7 @@ Fill the form
     [Arguments]    ${order}
     # We need to exact the value from the returned {table}
     # Which is dictinary
-    Set Local Variable    ${order_no}    ${order}[Order number]
+    Set Global Variable    ${order_no}    ${order}[Order number]
     Set Local Variable    ${head}    ${order}[Head]
     Set Local Variable    ${body}    ${order}[Body]
     Set Local Variable    ${legs}    ${order}[Legs]
@@ -102,8 +121,5 @@ Fill the form
     Select Radio Button    body    ${body}
     Input Text    XPATH://html/body/div/div/div[1]/div/div[1]/form/div[3]/input    ${legs}
     Input Text    XPATH://html/body/div/div/div[1]/div/div[1]/form/div[4]/input    ${shipping_address}
-
-# Clean Dev Session
-#    RPA.Browser.Playwright.Close Browser
-#    Remove Directory    ${screenshot_folder}    recursive=True
-#    Remove Directory    ${receipt_folder}    recursive=True
+    Log    ${order_no}
+    RETURN    ${order_no}
